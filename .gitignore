@@ -1,0 +1,46 @@
+# CMake build directories and generated files
+**/build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+compile_commands.json
+
+# Compiled binaries and intermediate files
+*.obj
+*.o
+*.pdb
+*.idb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+*.a
+*.so
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.vcxproj.user
+*.VC.db
+*.VC.VC.opendb
+
+# Qt Creator and Qt-generated local files
+*.pro.user
+*.qtc.user
+*.qtc.user.*
+*.autosave
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+*~

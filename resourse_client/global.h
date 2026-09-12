@@ -38,6 +38,8 @@ private:
 #define MAX_RECVQUE  2000000
 // 发送队列最大个数
 #define MAX_SENDQUE 2000000
+// 每次读取的最大字节数
+#define MAX_FILE_LEN 2048
 
 
 enum ReqId {

@@ -27,6 +27,14 @@ MainWindow::MainWindow(QWidget *parent)
     //接到服务端写文件成功的回包后，更新上传进度条
     connect(TcpClient::GetInstance().get(), &TcpClient::sig_upload_progress,
             this, &MainWindow::slot_upload_progress);
+    connect(TcpClient::GetInstance().get(), &TcpClient::sig_file_sync,
+            this, &MainWindow::slot_file_sync);
+    connect(TcpClient::GetInstance().get(), &TcpClient::sig_upload_error,
+            this, &MainWindow::slot_upload_error);
+
+    // 未开始上传前没有可继续的任务，避免“继续上传”意外创建一个新任务。
+    ui->resumeButton->setEnabled(false);
+    ui->resumeButton->setText(tr("暂停上传"));
 
 }
 
@@ -71,6 +79,12 @@ void MainWindow::on_chooseFileButton_clicked()
     if (filePath.isEmpty()) {
         return;
     }
+
+    // 切换文件后，旧文件对应的暂停任务不能继续使用。
+    _upload_active = false;
+    _has_upload_task = false;
+    ui->resumeButton->setEnabled(false);
+    ui->resumeButton->setText(tr("暂停上传"));
 
     // 先更新无需读取文件内容即可获得的路径、文件名和精确字节数。
     const QFileInfo fileInfo(filePath);
@@ -120,19 +134,29 @@ void MainWindow::slot_show_test(QString test)
     ui->responsePlainTextEdit->setPlainText(test);
 }
 
-void MainWindow::slot_upload_progress(int trans_size, int total_size)
+void MainWindow::slot_upload_progress(qint64 confirmed_offset, qint64 total_size, bool completed)
 {
-    //范围使用整个文件大小，value使用服务端已经保存的大小
-    ui->uploadProgressBar->setRange(0, total_size);
-    ui->uploadProgressBar->setValue(trans_size);
+    // 范围和进度都以服务端确认的值为准；本地发送成功不等于服务端已经落盘。
+    // QProgressBar 的 range 是 int；使用千分比可显示超过 2GB 的 qint64 文件。
+    ui->uploadProgressBar->setRange(0, 1000);
+    ui->uploadProgressBar->setValue(total_size == 0 ? 1000
+        : static_cast<int>(confirmed_offset * 1000 / total_size));
 
     ui->uploadStatusLabel->setText(
-        tr("已上传 %1 / %2 字节").arg(trans_size).arg(total_size));
+        tr("已上传 %1 / %2 字节").arg(confirmed_offset).arg(total_size));
 
-    //最后一个分片保存成功，服务端返回的传输大小等于文件总大小
-    if (trans_size == total_size) {
+    if (completed) {
         ui->uploadStatusLabel->setText(tr("上传完成：%1 字节").arg(total_size));
         ui->uploadButton->setEnabled(true);
+        _upload_active = false;
+        ui->resumeButton->setEnabled(false);
+        ui->resumeButton->setText(tr("继续上传"));
+        return;
+    }
+
+    // 每收到一个确认包再发送下一分片，避免断线时把完整文件堆积在 socket 写队列中。
+    if (_upload_active) {
+        sendNextChunk(confirmed_offset);
     }
 }
 
@@ -146,52 +170,154 @@ void MainWindow::on_uploadButton_clicked()
         return;
     }
 
+    if (_file_path.isEmpty() || _file_md5.isEmpty()) {
+        ui->uploadStatusLabel->setText(tr("请先选择一个可读取的文件。"));
+        return;
+    }
+
+    const QFileInfo fileInfo(_file_path);
+    if (!fileInfo.exists() || !fileInfo.isFile()) {
+        ui->uploadStatusLabel->setText(tr("所选文件已不存在，或不是普通文件。"));
+        return;
+    }
+
+    _file_size = fileInfo.size();
+    // upload_id 不包含 session_id，所以重新连接后仍指向同一个上传任务目录。
+    _upload_id = QString("%1_%2_%3").arg(_file_md5).arg(_file_size).arg(MAX_FILE_LEN);
+
     // 设置按钮不可点
     ui->uploadButton->setEnabled(false);
     //开始新的上传任务，先将进度条清零，收到回包后再根据文件大小设置范围
     ui->uploadProgressBar->setRange(0, 100);
     ui->uploadProgressBar->setValue(0);
     ui->uploadStatusLabel->setText(tr("正在上传..."));
-    QFile file(_file_path);
-    if(!file.open(QIODevice::ReadOnly)){
-        qWarning() << "Could not open file:" << file.errorString();
+    _upload_active = true;
+    _has_upload_task = true;
+    ui->resumeButton->setEnabled(true);
+    ui->resumeButton->setText(tr("暂停上传"));
+    requestUploadSync(true);
+}
+
+void MainWindow::on_resumeButton_clicked()
+{
+    // 暂停不取消已经写入服务器的内容；若正有一个分片在途，收到其确认后不会再发下一片。
+    if (_upload_active) {
+        _upload_active = false;
+        ui->resumeButton->setText(tr("继续上传"));
+        ui->uploadStatusLabel->setText(tr("上传已暂停，将保留服务端已确认的进度。"));
         return;
     }
 
-    QFileInfo fileInfo(_file_path); // 用完整路径构造
-    int total_size = fileInfo.size();
-    int last_seq = 0;
-    // 计算分块大小
-    if(total_size % MAX_FILE_LEN){
-        last_seq = total_size  / MAX_FILE_LEN + 1;
-    }else{
-        last_seq = total_size / MAX_FILE_LEN;
+    if (!_has_upload_task) {
+        return;
+    }
+    if (!TcpClient::GetInstance()->IsConnected()) {
+        ui->uploadStatusLabel->setText(tr("未连接服务器，无法继续上传。"));
+        return;
+    }
+    if (_file_path.isEmpty() || _file_md5.isEmpty()) {
+        ui->uploadStatusLabel->setText(tr("请先选择一个文件。"));
+        return;
     }
 
-    // 读取文件内容进行发送
-    QByteArray buffer;
-    int seq = 0;
-    while(!file.atEnd()){
-        // 每次读取2048字节，分块传输
-        buffer = file.read(MAX_FILE_LEN);
-        QJsonObject jsonObj;
-        // 将文件内容转换位Base64编码
-        QString base64Data = buffer.toBase64();
-        seq++;
-        jsonObj["md5"] = _file_md5;
-        jsonObj["name"] = fileInfo.fileName(); //提取出文件名
-        jsonObj["seq"] = seq;
-        jsonObj["trans_size"] = buffer.size() + (seq-1)*MAX_FILE_LEN; //已经传输的大小
-        jsonObj["total_size"] = total_size;
-        if(buffer.size() < MAX_FILE_LEN){
-            jsonObj["last"] = 1;
-        }else{
-            jsonObj["last"] = 0;
-        }
-        jsonObj["data"] = base64Data;
-        jsonObj["last_seq"] = last_seq;
-        QJsonDocument doc(jsonObj);
-        auto send_data = doc.toJson();
-        emit TcpClient::GetInstance()->sig_send_msg(ID_UPLOAD_FILE_REQ, send_data);
+    const QFileInfo fileInfo(_file_path);
+    if (!fileInfo.exists() || !fileInfo.isFile()) {
+        ui->uploadStatusLabel->setText(tr("所选文件已不存在，或不是普通文件。"));
+        return;
     }
+    if (fileInfo.size() != _file_size) {
+        slot_upload_error(tr("本地文件大小已改变，请重新选择文件后上传。"));
+        return;
+    }
+
+    // 继续前重新同步 offset：暂停期间即使服务端已确认在途分片，也能从正确位置开始。
+    _upload_active = true;
+    ui->uploadButton->setEnabled(false);
+    ui->resumeButton->setText(tr("暂停上传"));
+    requestUploadSync(true);
+}
+
+void MainWindow::requestUploadSync(bool start_upload_after_sync)
+{
+    QJsonObject request;
+    request["upload_id"] = _upload_id;
+    request["md5"] = _file_md5;
+    request["name"] = QFileInfo(_file_path).fileName();
+    request["total_size"] = QJsonValue::fromVariant(_file_size);
+    request["chunk_size"] = MAX_FILE_LEN;
+    request["start_upload"] = start_upload_after_sync;
+
+    ui->uploadStatusLabel->setText(start_upload_after_sync
+        ? tr("正在同步服务器续传进度...")
+        : tr("正在查询服务器续传进度..."));
+    emit TcpClient::GetInstance()->sig_send_msg(ID_SYNC_FILE_REQ,
+                                                QJsonDocument(request).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::slot_file_sync(qint64 confirmed_offset, qint64 total_size, bool completed,
+                                const QString& upload_id)
+{
+    if (upload_id != _upload_id || total_size != _file_size) {
+        slot_upload_error(tr("服务端返回的上传任务与当前选择的文件不一致。"));
+        return;
+    }
+
+    ui->uploadProgressBar->setRange(0, 1000);
+    ui->uploadProgressBar->setValue(total_size == 0 ? 1000
+        : static_cast<int>(confirmed_offset * 1000 / total_size));
+    if (completed) {
+        ui->uploadStatusLabel->setText(tr("服务器已有完整文件，已秒传完成。"));
+        ui->uploadButton->setEnabled(true);
+        _upload_active = false;
+        ui->resumeButton->setEnabled(false);
+        ui->resumeButton->setText(tr("继续上传"));
+        return;
+    }
+
+    ui->uploadStatusLabel->setText(
+        tr("服务端已确认 %1 / %2 字节。").arg(confirmed_offset).arg(total_size));
+    if (_upload_active) {
+        sendNextChunk(confirmed_offset);
+    }
+}
+
+void MainWindow::sendNextChunk(qint64 confirmed_offset)
+{
+    if (confirmed_offset < 0 || confirmed_offset > _file_size) {
+        slot_upload_error(tr("服务端返回了非法的续传偏移量。"));
+        return;
+    }
+
+    QFile file(_file_path);
+    if (!file.open(QIODevice::ReadOnly) || !file.seek(confirmed_offset)) {
+        slot_upload_error(tr("无法定位本地文件：%1").arg(file.errorString()));
+        return;
+    }
+
+    // 空文件也发送一个空的最后分片，使服务端可以发布它为完整文件。
+    const QByteArray buffer = file.read(MAX_FILE_LEN);
+    if (buffer.isEmpty() && confirmed_offset < _file_size) {
+        slot_upload_error(tr("读取本地文件失败：%1").arg(file.errorString()));
+        return;
+    }
+
+    const qint64 next_offset = confirmed_offset + buffer.size();
+    QJsonObject request;
+    request["upload_id"] = _upload_id;
+    request["md5"] = _file_md5;
+    request["name"] = QFileInfo(_file_path).fileName();
+    request["total_size"] = QJsonValue::fromVariant(_file_size);
+    request["offset"] = QJsonValue::fromVariant(confirmed_offset);
+    request["is_last"] = (next_offset == _file_size);
+    request["data"] = QString::fromLatin1(buffer.toBase64());
+    emit TcpClient::GetInstance()->sig_send_msg(ID_UPLOAD_FILE_REQ,
+                                                QJsonDocument(request).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::slot_upload_error(const QString& message)
+{
+    _upload_active = false;
+    ui->uploadButton->setEnabled(true);
+    ui->resumeButton->setText(tr("继续上传"));
+    ui->uploadStatusLabel->setText(message);
 }

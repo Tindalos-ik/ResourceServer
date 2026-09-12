@@ -8,7 +8,10 @@
 enum ErrorCodes {
     Success = 0,
     Error_Json = 1001,  //Json解析错误
-    FileNotExists = 1012
+    FileNotExists = 1012,
+    UploadTaskConflict = 1013, // upload_id 对应的任务元数据不匹配
+    UploadOffsetMismatch = 1014, // 分片偏移量和服务端已确认进度不一致
+    UploadFileError = 1015 // 创建、写入或发布上传文件失败
 };
 
 

@@ -109,7 +109,30 @@ void TcpClient::initHandlers()
         emit sig_show_test(test_str);
     };
 
-    //文件上传回包，服务端写入文件成功后才会回包
+    // 上传任务同步回包：客户端据此 seek 到服务端已经确认的字节位置。
+    _handler.insert(ReqId::ID_SYNC_FILE_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(id);
+        Q_UNUSED(len);
+        const QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull() || !jsonDoc.isObject()) {
+            emit sig_upload_error(tr("服务端返回了无效的续传进度。"));
+            return;
+        }
+
+        const QJsonObject jsonObj = jsonDoc.object();
+        if (jsonObj["error"].toInt(ErrorCodes::Error_Json) != ErrorCodes::Success) {
+            emit sig_upload_error(tr("同步上传任务失败，错误码：%1")
+                                      .arg(jsonObj["error"].toInt()));
+            return;
+        }
+
+        emit sig_file_sync(jsonObj["confirmed_offset"].toVariant().toLongLong(),
+                           jsonObj["total_size"].toVariant().toLongLong(),
+                           jsonObj["completed"].toBool(),
+                           jsonObj["upload_id"].toString());
+    });
+
+    // 文件上传回包，服务端写入文件成功后才会回包。
     _handler.insert(ReqId::ID_UPLOAD_FILE_RSP, [this](ReqId id, int len, QByteArray data) {
         Q_UNUSED(len);
         qDebug() << "handle id is " << id << "data is " << data;
@@ -118,8 +141,8 @@ void TcpClient::initHandlers()
         QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
 
         //检查转换是否成功
-        if(jsonDoc.isNull()){
-            qDebug() << "failed to create QJsonDocument";
+        if(jsonDoc.isNull() || !jsonDoc.isObject()){
+            emit sig_upload_error(tr("服务端返回了无效的上传结果。"));
             return;
         }
 
@@ -128,20 +151,22 @@ void TcpClient::initHandlers()
 
         //正常回包必须有error字段，用来判断服务端是否成功写入该分片
         if(!json_obj.contains("error")){
-            qDebug() << "Upload Failed, err is Json Parse Err";
+            emit sig_upload_error(tr("上传失败：服务端回包缺少错误码。"));
             return;
         }
 
         int err = json_obj["error"].toInt();
         if(err != ErrorCodes::Success){
-            qDebug() << "Upload Failed, err is" << err;
+            const qint64 expectedOffset = json_obj["confirmed_offset"].toVariant().toLongLong();
+            emit sig_upload_error(tr("上传失败，错误码：%1；服务端确认到 %2 字节。")
+                                      .arg(err).arg(expectedOffset));
             return;
         }
 
-        //trans_size是服务端已经保存的字节数，不能用客户端发送量代替
-        int trans_size = json_obj["trans_size"].toInt();
-        int total_size = json_obj["total_size"].toInt();
-        emit sig_upload_progress(trans_size, total_size);
+        // confirmed_offset 是服务端实际落盘后的字节数，不能用客户端发送量代替。
+        const qint64 confirmedOffset = json_obj["confirmed_offset"].toVariant().toLongLong();
+        const qint64 totalSize = json_obj["total_size"].toVariant().toLongLong();
+        emit sig_upload_progress(confirmedOffset, totalSize, json_obj["completed"].toBool());
     });
 
 }

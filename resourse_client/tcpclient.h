@@ -43,7 +43,12 @@ signals:
     void sig_send_msg(quint16, QByteArray);
     void sig_show_test(QString);
     void sig_con_success(bool);
-    void sig_upload_progress(int trans_size, int total_size); //通知主窗口更新上传进度
+    // 服务端确认写入后的真实进度；qint64 避免 2GB 以上文件溢出。
+    void sig_upload_progress(qint64 confirmed_offset, qint64 total_size, bool completed);
+    // 同步上传任务后返回的续传位置。
+    void sig_file_sync(qint64 confirmed_offset, qint64 total_size, bool completed,
+                       const QString& upload_id);
+    void sig_upload_error(const QString& message);
 };
 
 #endif // TCPCLIENT_H

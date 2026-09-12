@@ -8,7 +8,10 @@
 enum ErrorCodes {
     Success = 0,
     Error_Json = 1001,  //Json解析错误
-    FileNotExists = 1012
+    FileNotExists = 1012,
+    UploadTaskConflict = 1013,
+    UploadOffsetMismatch = 1014,
+    UploadFileError = 1015
 };
 
 

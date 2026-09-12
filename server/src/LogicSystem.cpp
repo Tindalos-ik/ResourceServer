@@ -112,16 +112,29 @@ void LogicSystem::HandleUploadFile(std::shared_ptr<CSession> session, const shor
     });
 
     std::string data = root["data"].asString();
-    // 解码，客户端传来的data是base64编码的
-    std::string decoded_data = Base64Encode(data);
+    // 客户端上传的是 Base64 文本，保存前必须还原为原始二进制字节。
+    std::string decoded_data;
+    if (!Base64Decode(data, decoded_data)) {
+        std::cout << "Failed to decode Base64 data" << std::endl;
+        rtvalue["error"] = ErrorCodes::Error_Json;
+        return;
+    }
 
     auto seq = root["seq"].asInt();
     auto name = root["name"].asString();
     auto total_size = root["total_size"].asInt();
     auto trans_size = root["trans_size"].asInt();
     auto file_path = ConfigMgr::Inst().GetFilePath();
-    auto file_path_str = (file_path / name).string();
-    std::cout << "file_path_str: " << file_path_str << std::endl;
+    // JSON 中的中文文件名为 UTF-8，u8path 可避免 Windows 按本地代码页解释而乱码。
+    // filename() 只保留名称，防止客户端传入 "../" 等路径越界写文件。
+    auto file_name = std::filesystem::u8path(name).filename();
+    if (file_name.empty()) {
+        std::cout << "Invalid file name" << std::endl;
+        rtvalue["error"] = ErrorCodes::Error_Json;
+        return;
+    }
+    auto file_path_str = file_path / file_name;
+    std::cout << "file_path: " << file_path_str << std::endl;
     std::ofstream outfile;
     if(seq == 1){
         // 第一个包需要创建

@@ -215,7 +215,7 @@ void CSession::ReadBody(int body_len) {
             _recv_msg_node->_data[_recv_msg_node->_total_len] = '\0';
             std::cout << "receive data is " << _recv_msg_node->_data << endl;
 
-            // 封装成逻辑节点投递给逻辑层处理（登录校验、聊天转发等）
+            // 封装成逻辑节点投递给逻辑层处理
             LogicSystem::GetInstance()->PostMsgToQue(
                 std::make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
 

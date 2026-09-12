@@ -68,6 +68,7 @@ private:
  * 逻辑层根据 _recvnode 中的消息id分发到对应的处理函数。
  */
 class LogicNode {
+    friend class LogicWorker;
     friend class LogicSystem;
 public:
     LogicNode(std::shared_ptr<CSession>, std::shared_ptr<RecvNode>);

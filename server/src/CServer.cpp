@@ -2,6 +2,7 @@
 #include "AsioIOServicePool.h"
 #include <iostream>
 #include "ConfigMgr.h"
+#include "LogicSystem.h"
 
 using boost::asio::ip::tcp;
 
@@ -33,6 +34,8 @@ void CServer::StartAccept() {
 void CServer::HandleAccept(std::shared_ptr<CSession> new_session,
                            const boost::system::error_code &error) {
     if (!error) {
+        // 给新会话绑定一个工作线程
+        LogicSystem::GetInstance()->BindSession(new_session->GetSessionId());
         // 让会话开始接收数据（先读包头）
         new_session->Start();
         // 把会话登记到map中，维持其生命周期，防止被提前析构
@@ -55,4 +58,5 @@ void CServer::ClearSession(std::string session_id) {
             _sessions.erase(iter);
         }
     }
+    LogicSystem::GetInstance()->UnbindSession(session_id);
 }

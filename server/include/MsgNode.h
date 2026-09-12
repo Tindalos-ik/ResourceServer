@@ -44,7 +44,7 @@ public:
  * 包头解析完成后，根据消息id和消息体长度构造该节点，用于存放消息体
  */
 class RecvNode : public MsgNode {
-    friend class LogicSystem; // 逻辑层需要读取 _msg_id 做消息路由
+    friend class LogicWorker; // 逻辑层需要读取 _msg_id 做消息路由
 public:
     // max_len: 消息体长度；msg_id: 消息id（由包头解析出来）
     RecvNode(short max_len, short msg_id) : MsgNode(max_len), _msg_id(msg_id) {
@@ -59,7 +59,7 @@ private:
  * 发送时直接整块写出，无需在会话层再拼包。
  */
 class SendNode : public MsgNode {
-    friend class LogicSystem;
+    friend class LogicWorker;
 public:
     SendNode(const char* msg, std::uint32_t max_len, short msg_id)
         : MsgNode(static_cast<short>(max_len + HEAD_TOTAL_LEN)), _msg_id(msg_id) {

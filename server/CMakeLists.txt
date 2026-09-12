@@ -18,6 +18,7 @@ set(SOURCE_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigMgr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AsioIOServicePool.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CSession.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/LogicWorker.cpp
 )
 
 link_directories("D:/cppsoft/vcpkg/installed/x64-windows/lib") # 添加 vcpkg 的 lib 路径，库文件搜索路径

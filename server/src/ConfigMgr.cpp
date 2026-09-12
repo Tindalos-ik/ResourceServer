@@ -38,3 +38,25 @@ ConfigMgr::ConfigMgr()
         }
     }
 }
+
+std::filesystem::path ConfigMgr::GetFilePath() const
+{
+    constexpr const char* kDefaultFilePath = "uploads";
+    std::string configured_path = (*this)["ResourceServer"]["file_path"];
+    if (configured_path.empty()) {
+        configured_path = kDefaultFilePath;
+    }
+
+    std::filesystem::path file_path(configured_path);
+    if (file_path.is_relative()) {
+        file_path = std::filesystem::current_path() / file_path;
+    }
+
+    std::error_code error;
+    std::filesystem::create_directories(file_path, error);
+    if (error) {
+        std::cerr << "Failed to create upload directory " << file_path
+                  << ": " << error.message() << std::endl;
+    }
+    return file_path;
+}

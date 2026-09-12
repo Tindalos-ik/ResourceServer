@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 #include <iostream>
+#include <filesystem>
 
 //这个类也做成单例模式
 
@@ -37,11 +38,12 @@ struct SectionInfo{
     std::map<std::string, std::string> _section_datas;
 
     //重载[]运算符，返回Section_datas
-    std::string operator[](const std::string& key){
-        if(_section_datas.find(key) == _section_datas.end()){
+    std::string operator[](const std::string& key) const {
+        const auto iter = _section_datas.find(key);
+        if(iter == _section_datas.end()){
             return "";
         }
-        return _section_datas[key];
+        return iter->second;
     }
 };
 
@@ -51,11 +53,12 @@ public:
         _config_map.clear();
     }
 
-    SectionInfo operator[](const std::string& section){
-        if(_config_map.find(section) == _config_map.end()){
+    SectionInfo operator[](const std::string& section) const {
+        const auto iter = _config_map.find(section);
+        if(iter == _config_map.end()){
             return  SectionInfo();
         }
-        return _config_map[section];
+        return iter->second;
     }
 
     static ConfigMgr& Inst(){
@@ -66,6 +69,10 @@ public:
 
     ConfigMgr(const ConfigMgr& other) = delete;
     ConfigMgr& operator=(const ConfigMgr& other) = delete;
+
+    // 返回配置的文件保存目录；目录不存在时会自动创建。
+    // server\build\Debug\uploads
+    std::filesystem::path GetFilePath() const;
 
 private:
     ConfigMgr();  //构造函数内容比较多，要读文件初始化_config_map表，所以放在cpp文件中实现

@@ -12,6 +12,7 @@ set(JSONCPP_SOURCES
 )
 
 set(SOURCE_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Base64.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LogicSystem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CServer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigMgr.cpp

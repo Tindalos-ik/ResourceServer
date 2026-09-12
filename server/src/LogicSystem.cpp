@@ -3,6 +3,9 @@
 #include <sstream>
 #include <iostream>
 #include <cctype>
+#include "ConfigMgr.h"
+#include "Base64.h"
+#include <fstream>
 
 using namespace std;
 
@@ -77,6 +80,9 @@ void LogicSystem::RegisterCallBacks() {
    _fun_callbacks[ID_TEST_MSG_REQ] = [this](std::shared_ptr<CSession> session, const short &msg_id, const std::string &msg_data) {
         HandleTestMsg(session, msg_id, msg_data);
    };
+   _fun_callbacks[ID_UPLOAD_FILE_REQ] = [this](std::shared_ptr<CSession> session, const short &msg_id, const std::string &msg_data) {
+        HandleUploadFile(session, msg_id, msg_data);
+   };
 }
 
 void LogicSystem::HandleTestMsg(std::shared_ptr<CSession> session, const short &msg_id, const std::string &msg_data)
@@ -84,4 +90,64 @@ void LogicSystem::HandleTestMsg(std::shared_ptr<CSession> session, const short &
     // 服务器原样返回即可
     std::string return_str = msg_data;
     session->Send(return_str, ID_TEST_MSG_RSP); 
+}
+
+void LogicSystem::HandleUploadFile(std::shared_ptr<CSession> session, const short &msg_id, const std::string &msg_data)
+{
+    Json::CharReaderBuilder reader;
+    Json::Value root;
+    std::istringstream ss(msg_data);
+    std::string errs;
+    bool parse_success = Json::parseFromStream(reader, ss, &root, &errs);
+    if (!parse_success) {
+        std::cout << "Failed to parse JSON data" << std::endl;
+        std::cout << errs << std::endl;
+        return;
+    }
+
+    Json::Value rtvalue;
+    Defer defer([this, session, &rtvalue]() {
+        std::string return_str = rtvalue.toStyledString();
+        session->Send(return_str, ID_UPLOAD_FILE_RSP);
+    });
+
+    std::string data = root["data"].asString();
+    // 解码，客户端传来的data是base64编码的
+    std::string decoded_data = Base64Encode(data);
+
+    auto seq = root["seq"].asInt();
+    auto name = root["name"].asString();
+    auto total_size = root["total_size"].asInt();
+    auto trans_size = root["trans_size"].asInt();
+    auto file_path = ConfigMgr::Inst().GetFilePath();
+    auto file_path_str = (file_path / name).string();
+    std::cout << "file_path_str: " << file_path_str << std::endl;
+    std::ofstream outfile;
+    if(seq == 1){
+        // 第一个包需要创建
+        // 打开文件，如果存在则清空，不存在则创建
+        outfile.open(file_path_str, std::ios::binary | std::ios::trunc);
+    }else{
+        // 保存为文件
+        outfile.open(file_path_str, std::ios::binary | std::ios::app);
+    }
+    if(!outfile){
+        std::cout << "Failed to open file" << std::endl;
+        return;
+    }
+    outfile.write(decoded_data.data(), decoded_data.size());
+    if(!outfile){
+        std::cout << "Failed to write file" << std::endl;
+        return;
+    }
+    outfile.close();
+    std::cout << "Write file success" << name << std::endl;
+
+    rtvalue["error"] = ErrorCodes::Success;
+    rtvalue["seq"] = seq;
+    rtvalue["name"] = name;
+    rtvalue["total_size"] = total_size;
+    rtvalue["trans_size"] = trans_size;
+  
+
 }

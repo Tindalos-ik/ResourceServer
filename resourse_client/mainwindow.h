@@ -25,6 +25,7 @@ private slots:
     void on_uploadButton_clicked();
     void slot_con_success(bool);
     void slot_show_test(QString);
+    void slot_upload_progress(int trans_size, int total_size);
 
 private:
     Ui::MainWindow *ui;

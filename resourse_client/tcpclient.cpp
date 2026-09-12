@@ -102,6 +102,41 @@ void TcpClient::initHandlers()
         emit sig_show_test(test_str);
     };
 
+    //文件上传回包，服务端写入文件成功后才会回包
+    _handler.insert(ReqId::ID_UPLOAD_FILE_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        qDebug() << "handle id is " << id << "data is " << data;
+
+        //将字节流转换为json文档
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+
+        //检查转换是否成功
+        if(jsonDoc.isNull()){
+            qDebug() << "failed to create QJsonDocument";
+            return;
+        }
+
+        //将json文档转换为json对象
+        QJsonObject json_obj = jsonDoc.object();
+
+        //正常回包必须有error字段，用来判断服务端是否成功写入该分片
+        if(!json_obj.contains("error")){
+            qDebug() << "Upload Failed, err is Json Parse Err";
+            return;
+        }
+
+        int err = json_obj["error"].toInt();
+        if(err != ErrorCodes::Success){
+            qDebug() << "Upload Failed, err is" << err;
+            return;
+        }
+
+        //trans_size是服务端已经保存的字节数，不能用客户端发送量代替
+        int trans_size = json_obj["trans_size"].toInt();
+        int total_size = json_obj["total_size"].toInt();
+        emit sig_upload_progress(trans_size, total_size);
+    });
+
 }
 
 

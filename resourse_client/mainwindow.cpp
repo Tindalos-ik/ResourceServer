@@ -23,6 +23,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(this, &MainWindow::sig_tcp_connect, TcpClient::GetInstance().get(), &TcpClient::slot_tcp_connect);
     connect(TcpClient::GetInstance().get(), &TcpClient::sig_show_test, this, &MainWindow::slot_show_test);
     connect(TcpClient::GetInstance().get(), &TcpClient::sig_con_success, this, &MainWindow::slot_con_success);
+    //接到服务端写文件成功的回包后，更新上传进度条
+    connect(TcpClient::GetInstance().get(), &TcpClient::sig_upload_progress,
+            this, &MainWindow::slot_upload_progress);
 
 }
 
@@ -116,10 +119,30 @@ void MainWindow::slot_show_test(QString test)
     ui->responsePlainTextEdit->setPlainText(test);
 }
 
+void MainWindow::slot_upload_progress(int trans_size, int total_size)
+{
+    //范围使用整个文件大小，value使用服务端已经保存的大小
+    ui->uploadProgressBar->setRange(0, total_size);
+    ui->uploadProgressBar->setValue(trans_size);
+
+    ui->uploadStatusLabel->setText(
+        tr("已上传 %1 / %2 字节").arg(trans_size).arg(total_size));
+
+    //最后一个分片保存成功，服务端返回的传输大小等于文件总大小
+    if (trans_size == total_size) {
+        ui->uploadStatusLabel->setText(tr("上传完成：%1 字节").arg(total_size));
+        ui->uploadButton->setEnabled(true);
+    }
+}
+
 void MainWindow::on_uploadButton_clicked()
 {
     // 设置按钮不可点
     ui->uploadButton->setEnabled(false);
+    //开始新的上传任务，先将进度条清零，收到回包后再根据文件大小设置范围
+    ui->uploadProgressBar->setRange(0, 100);
+    ui->uploadProgressBar->setValue(0);
+    ui->uploadStatusLabel->setText(tr("正在上传..."));
     QFile file(_file_path);
     if(!file.open(QIODevice::ReadOnly)){
         qWarning() << "Could not open file:" << file.errorString();
@@ -163,4 +186,3 @@ void MainWindow::on_uploadButton_clicked()
         emit TcpClient::GetInstance()->sig_send_msg(ID_UPLOAD_FILE_REQ, send_data);
     }
 }
-

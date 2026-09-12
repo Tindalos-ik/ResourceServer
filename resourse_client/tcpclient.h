@@ -42,6 +42,7 @@ signals:
     void sig_send_msg(quint16, QByteArray);
     void sig_show_test(QString);
     void sig_con_success(bool);
+    void sig_upload_progress(int trans_size, int total_size); //通知主窗口更新上传进度
 };
 
 #endif // TCPCLIENT_H

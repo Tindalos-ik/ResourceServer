@@ -17,6 +17,7 @@ class TcpClient : public QObject, public Singleton<TcpClient>
     friend class Singleton<TcpClient>;
 public:
     ~TcpClient();
+    bool IsConnected() const;
     void sendMsg(quint16 id,QByteArray data);
 private:
     TcpClient();

@@ -7,6 +7,13 @@ TcpClient::~TcpClient()
 
 }
 
+// 对外提供连接状态，业务界面在发送数据前可据此做提示。
+bool TcpClient::IsConnected() const
+{
+    return _socket != nullptr &&
+           _socket->state() == QAbstractSocket::ConnectedState;
+}
+
 TcpClient::TcpClient(): _b_recy_pending(false), _message_id(0), _message_len(0){
 
     _socket = new QTcpSocket();

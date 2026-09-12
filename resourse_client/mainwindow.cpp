@@ -7,6 +7,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QIODevice>
+#include <QMessageBox>
 #include "global.h"
 #include "tcpclient.h"
 #include <QJsonObject>
@@ -137,6 +138,14 @@ void MainWindow::slot_upload_progress(int trans_size, int total_size)
 
 void MainWindow::on_uploadButton_clicked()
 {
+    // 上传依赖 TCP 长连接；未连接时不读取文件、不禁用按钮，也不发送分片。
+    if (!TcpClient::GetInstance()->IsConnected()) {
+        ui->uploadStatusLabel->setText(tr("未连接服务器，请先连接后再上传。"));
+        QMessageBox::warning(this, tr("未连接服务器"),
+                             tr("请先连接服务器，然后再开始上传文件。"));
+        return;
+    }
+
     // 设置按钮不可点
     ui->uploadButton->setEnabled(false);
     //开始新的上传任务，先将进度条清零，收到回包后再根据文件大小设置范围

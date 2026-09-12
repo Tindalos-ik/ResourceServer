@@ -64,7 +64,7 @@ void LogicWorker::DealMsg() {
         auto msg_node = _msg_que.front();
         _msg_que.pop();
         unique_lk.unlock(); // 释放锁，避免阻塞其他线程
-        
+
         auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
         if (call_back_iter == _fun_callbacks.end()) {
             std::cout << "msg id [" << msg_node->_recvnode->_msg_id << "] handler not found" << std::endl;
@@ -158,7 +158,7 @@ void LogicWorker::HandleUploadFile(std::shared_ptr<CSession> session, const shor
         return;
     }
     outfile.close();
-    std::cout << "Write file success" << name << std::endl;
+    std::cout << "Write file success : " << name << std::endl;
 
     rtvalue["error"] = ErrorCodes::Success;
     rtvalue["seq"] = seq;

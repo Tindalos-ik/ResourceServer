@@ -22,8 +22,11 @@ LogicSystem::~LogicSystem() {
 void LogicSystem::PostMsgToQue(std::shared_ptr<LogicNode> msg)
 {
     auto session_id = msg->_session->GetSessionId();
-    auto worker_index = _session_worker_map[session_id];
-    _workers[worker_index]->PostTask(msg);
+    std::lock_guard<std::mutex> lock(_map_mutex);
+    auto iter = _session_worker_map.find(session_id);
+    if(iter != _session_worker_map.end()){
+        _workers[iter->second]->PostTask(msg);
+    }
 }
 
 void LogicSystem::BindSession(const std::string &session_id)
